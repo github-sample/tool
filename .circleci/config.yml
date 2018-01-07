@@ -1,0 +1,78 @@
+# PHP CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-php/ for more details
+#
+version: 2
+jobs:
+  build-job:
+    docker:
+      - image: centos:7
+
+    working_directory: ~/repo
+
+    steps:
+      - checkout
+
+      # Download and cache dependencies
+      - restore_cache:
+          keys:
+          - v1-dependencies-{{ checksum "composer.json" }}
+          # fallback to using the latest cache if no exact match is found
+          - v1-dependencies-
+
+      # install make
+      - run: yum -y install make
+
+      # install git
+      - run: yum -y install git
+
+      # install php
+      - run: yum -y install php-pear php-devel gcc ImageMagick ImageMagick-devel ImageMagick-perl
+
+      # install composer
+      - run: php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+      - run: php composer-setup.php --filename=composer
+      
+      - run: ./composer install -n --prefer-dist
+
+      # install Imagick
+      - run: pecl install imagick
+      - run: echo "extension=imagick.so" >> /etc/php.ini
+
+      - save_cache:
+          paths:
+            - ./vendor
+          key: v1-dependencies-{{ checksum "composer.json" }}
+        
+      # run tests!
+      - run: ./vendor/bin/phpunit
+
+  # deployer
+  deploy-job: 
+    docker:
+      - image: centos:7
+
+    steps:
+      - checkout
+      - add_ssh_keys:
+          fingerprints:
+            - "【Fingerprint】"
+      - run: echo "User 【ユーザー名】" >> $HOME/.ssh/config
+      - run: echo "ForwardAgent yes" >> $HOME/.ssh/config
+      - run: yum -y install php-pear php-devel
+      - run: curl -LO https://deployer.org/releases/v3.0.11/deployer.phar
+      - run: mv deployer.phar dep
+      - run: chmod +x ./dep
+      - run: ./dep deploy production
+
+workflows:
+  version: 2
+  build-deploy:
+    jobs:
+      - build-job
+      - deploy-job:
+          requires:
+            - build-job
+          filters:
+            branches:
+              only: master
